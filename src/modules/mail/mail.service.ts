@@ -32,22 +32,10 @@ export class MailService {
     const subject = this.getOtpSubject(purpose);
     const html = this.getOtpEmailHtml(code, purpose);
 
-    const emailjsServiceId = this.configService.get<string>(
-      'EMAILJS_SERVICE_ID',
-      'service_q4928ar',
-    );
-    const emailjsTemplateId = this.configService.get<string>(
-      'EMAILJS_TEMPLATE_ID',
-      'template_lv3yc6o',
-    );
-    const emailjsPublicKey = this.configService.get<string>(
-      'EMAILJS_PUBLIC_KEY',
-      'M1EKXWiSpsQEruZMa',
-    );
-    const emailjsPrivateKey = this.configService.get<string>(
-      'EMAILJS_PRIVATE_KEY',
-      'tUQTnIghyHQRlWHlHjCHA',
-    );
+    const emailjsServiceId = this.configService.get<string>('EMAILJS_SERVICE_ID');
+    const emailjsTemplateId = this.configService.get<string>('EMAILJS_TEMPLATE_ID');
+    const emailjsPublicKey = this.configService.get<string>('EMAILJS_PUBLIC_KEY');
+    const emailjsPrivateKey = this.configService.get<string>('EMAILJS_PRIVATE_KEY');
 
     if (emailjsServiceId && emailjsTemplateId && emailjsPublicKey) {
       try {
