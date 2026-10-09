@@ -32,6 +32,48 @@ export class MailService {
     const subject = this.getOtpSubject(purpose);
     const html = this.getOtpEmailHtml(code, purpose);
 
+    const resendApiKey = this.configService.get<string>('RESEND_API_KEY');
+
+    if (resendApiKey) {
+      try {
+        const from =
+          this.configService.get<string>('RESEND_FROM') ||
+          'Thinhuw <onboarding@resend.dev>';
+
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey.trim()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from,
+            to: [email],
+            subject,
+            html,
+          }),
+        });
+
+        const resData = await response.json();
+
+        if (!response.ok) {
+          this.logger.error(
+            `Resend API error (${response.status}): ${JSON.stringify(resData)}`,
+          );
+          // If Resend free tier restricts to owner email, log OTP clearly
+          this.logger.warn(`[FALLBACK OTP for ${email}]: ${code}`);
+        } else {
+          this.logger.log(`✅ OTP email sent via Resend to ${email} (${purpose})`);
+        }
+        return;
+      } catch (error) {
+        this.logger.error(`Failed to send email via Resend: ${error.message}`);
+        this.logger.warn(`[FALLBACK OTP for ${email}]: ${code}`);
+        return;
+      }
+    }
+
+    // Fallback: SMTP via nodemailer
     try {
       await this.transporter.sendMail({
         from: this.configService.get<string>(
