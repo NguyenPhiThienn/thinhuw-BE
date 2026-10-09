@@ -15,10 +15,10 @@ export class MailService {
       secure: this.configService.get<string>('MAIL_SECURE', 'false') === 'true',
       auth:
         this.configService.get<string>('MAIL_USER') &&
-        this.configService.get<string>('MAIL_PASSWORD')
+        this.configService.get<string>('MAIL_PASS')
           ? {
               user: this.configService.get<string>('MAIL_USER'),
-              pass: this.configService.get<string>('MAIL_PASSWORD'),
+              pass: this.configService.get<string>('MAIL_PASS'),
             }
           : undefined,
     });
