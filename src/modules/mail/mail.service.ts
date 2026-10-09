@@ -32,6 +32,58 @@ export class MailService {
     const subject = this.getOtpSubject(purpose);
     const html = this.getOtpEmailHtml(code, purpose);
 
+    const emailjsServiceId = this.configService.get<string>(
+      'EMAILJS_SERVICE_ID',
+      'service_q4928ar',
+    );
+    const emailjsTemplateId = this.configService.get<string>(
+      'EMAILJS_TEMPLATE_ID',
+      'template_lv3yc6o',
+    );
+    const emailjsPublicKey = this.configService.get<string>(
+      'EMAILJS_PUBLIC_KEY',
+      'M1EKXWiSpsQEruZMa',
+    );
+    const emailjsPrivateKey = this.configService.get<string>(
+      'EMAILJS_PRIVATE_KEY',
+      'tUQTnIghyHQRlWHlHjCHA',
+    );
+
+    if (emailjsServiceId && emailjsTemplateId && emailjsPublicKey) {
+      try {
+        const response = await fetch(
+          'https://api.emailjs.com/api/v1.0/email/send',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              service_id: emailjsServiceId,
+              template_id: emailjsTemplateId,
+              user_id: emailjsPublicKey,
+              accessToken: emailjsPrivateKey,
+              template_params: {
+                to_email: email,
+                passcode: code,
+                time: '10 phút',
+              },
+            }),
+          },
+        );
+
+        if (response.ok) {
+          this.logger.log(`✅ OTP email sent via EmailJS to ${email} (${purpose})`);
+          return;
+        }
+
+        const errText = await response.text();
+        this.logger.error(`EmailJS error (${response.status}): ${errText}`);
+      } catch (error) {
+        this.logger.error(`Failed to send email via EmailJS: ${error.message}`);
+      }
+    }
+
     const resendApiKey = this.configService.get<string>('RESEND_API_KEY');
 
     if (resendApiKey) {
@@ -60,7 +112,6 @@ export class MailService {
           this.logger.error(
             `Resend API error (${response.status}): ${JSON.stringify(resData)}`,
           );
-          // If Resend free tier restricts to owner email, log OTP clearly
           this.logger.warn(`[FALLBACK OTP for ${email}]: ${code}`);
         } else {
           this.logger.log(`✅ OTP email sent via Resend to ${email} (${purpose})`);
