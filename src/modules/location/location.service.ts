@@ -100,6 +100,93 @@ export class LocationService {
     return location;
   }
 
+  // ── Get Partner Stop Events ────────────────────────────────────────────────
+
+  async getPartnerStops(userId: string) {
+    const partner = await this.findPartner(userId);
+    if (!partner) {
+      throw new NotFoundException('You do not have an active partner');
+    }
+
+    // Lấy coupleId
+    const member = await this.prisma.coupleMember.findUnique({
+      where: { userId },
+      select: { coupleId: true },
+    });
+    if (!member) throw new NotFoundException('Couple not found');
+
+    // Lấy tối đa 5 stop events mới nhất của partner trong couple này
+    const stops = await this.prisma.stopEvent.findMany({
+      where: {
+        userId: partner.id,
+        coupleId: member.coupleId,
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 5,
+    });
+
+    // Tính summary: tổng km (từ history hôm nay), số điểm dừng, tổng thời gian dừng
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const todayHistory = await this.prisma.locationHistory.findMany({
+      where: {
+        userId: partner.id,
+        recordedAt: { gte: todayStart },
+      },
+      orderBy: { recordedAt: 'asc' },
+      select: { latitude: true, longitude: true },
+    });
+
+    // Tính tổng quãng đường bằng Haversine
+    let totalKm = 0;
+    for (let i = 1; i < todayHistory.length; i++) {
+      totalKm += this.haversineKm(
+        todayHistory[i - 1].latitude, todayHistory[i - 1].longitude,
+        todayHistory[i].latitude, todayHistory[i].longitude,
+      );
+    }
+
+    // Tổng thời gian dừng hôm nay
+    const todayStops = stops.filter(s => new Date(s.startedAt) >= todayStart);
+    const totalStopMins = todayStops.reduce((sum, s) => sum + (s.durationMins || 0), 0);
+
+    return {
+      stops: stops.map(s => ({
+        id: s.id,
+        address: s.address || `${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}`,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        startedAt: s.startedAt.toISOString(),
+        leftAt: s.leftAt?.toISOString() || null,
+        durationMins: s.durationMins || null,
+        status: s.leftAt ? 'LEFT' : 'CURRENT',
+      })),
+      summary: {
+        totalKm: Math.round(totalKm * 10) / 10,
+        stopCount: todayStops.length,
+        totalStopHours: Math.round((totalStopMins / 60) * 10) / 10,
+      },
+    };
+  }
+
+  // Notify partner when a new stop is detected
+  async notifyStopUpdated(partnerId: string, stopData: any) {
+    this.events.notifyStopUpdated(partnerId, stopData);
+  }
+
+  private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   // ── Get Partner Location ───────────────────────────────────────────────────
 
   async getPartnerLocation(userId: string) {

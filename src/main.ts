@@ -20,7 +20,7 @@ async function bootstrap() {
   });
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('API_PORT', 3000);
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : configService.get<number>('API_PORT', 3000);
   const prefix = configService.get<string>('API_PREFIX', 'api/v1');
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const corsOrigins = configService
@@ -107,7 +107,7 @@ async function bootstrap() {
     logger.log(`📚 Swagger docs: http://localhost:${port}/docs`);
   }
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   logger.log(`🚀 Thinhuw API running on: http://localhost:${port}/${prefix}`);
   logger.log(`🌍 Environment: ${nodeEnv}`);
   logger.log(

@@ -133,6 +133,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`user_${partnerId}`).emit('couple:anniversary_updated', payload);
   }
 
+  notifyStopUpdated(partnerId: string, payload: any) {
+    this.server.to(`user_${partnerId}`).emit('activity:stop_updated', payload);
+  }
+
   // ── Inbound Socket Events ───────────────────────────────────────────────────
 
   @SubscribeMessage('chat:typing')

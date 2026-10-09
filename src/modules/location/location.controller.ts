@@ -78,6 +78,13 @@ export class LocationController {
     return this.locationService.getHistory(userId, query);
   }
 
+  @Get('stops')
+  @ApiOperation({ summary: 'Get partner stop events (max 5, with today summary)' })
+  @ApiResponse({ status: 200, description: 'Partner stop events and summary stats' })
+  async getPartnerStops(@CurrentUser('id') userId: string) {
+    return this.locationService.getPartnerStops(userId);
+  }
+
   @Delete('history')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete own location history' })

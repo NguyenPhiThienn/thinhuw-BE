@@ -134,7 +134,7 @@ export class LocationScheduler {
 
           if (distance < minDistanceMeters) {
             // User has been at this location for stop threshold — create stop event
-            await this.prisma.stopEvent.create({
+            const createdStop = await this.prisma.stopEvent.create({
               data: {
                 userId: user.id,
                 coupleId: couple.id,
@@ -144,6 +144,11 @@ export class LocationScheduler {
                 address: location.address,
                 startedAt: recentHistory.recordedAt,
               },
+            });
+
+            this.events.notifyStopUpdated(partner.userId, {
+              type: 'stop:created',
+              stop: createdStop,
             });
 
             this.logger.debug(
@@ -234,6 +239,15 @@ export class LocationScheduler {
         longitude: openStop.longitude,
         address: openStop.address,
         timestamp: leftAt.toISOString(),
+      });
+
+      this.events.notifyStopUpdated(openStop.notifiedId, {
+        type: 'stop:left',
+        stop: {
+          ...openStop,
+          leftAt,
+          durationMins,
+        },
       });
 
       this.logger.log(
