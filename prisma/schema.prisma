@@ -1,0 +1,597 @@
+// =============================================================================
+// THINHUW - Prisma Schema
+// Database: MariaDB 11.2
+// ORM: Prisma 5.x
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum OtpPurpose {
+  REGISTER
+  LOGIN
+  RESET_PASSWORD
+  CHANGE_EMAIL
+}
+
+enum OtpStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  CANCELLED
+}
+
+enum PairingCodeStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+enum CoupleStatus {
+  ACTIVE
+  DISSOLVED
+}
+
+enum PairingRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum LocationSharingStatus {
+  SHARING
+  STOPPED
+  OFFLINE
+  NO_PERMISSION
+}
+
+enum MovementStatus {
+  STATIONARY
+  WALKING
+  MOVING
+  DRIVING
+}
+
+enum MessageType {
+  TEXT
+  EMOJI
+  LOVE_NOTE
+  SYSTEM
+  IMAGE
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum NotificationType {
+  PAIRING_REQUEST
+  PAIRING_ACCEPTED
+  LOCATION_SHARE_STARTED
+  LOCATION_SHARE_STOPPED
+  PARTNER_LEFT_STOP
+  NEW_MESSAGE
+  LOVE_NOTE
+  SOS_ALERT
+  SOS_SAFE
+  BATTERY_LOW
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  LOCAL
+  PUSH
+}
+
+enum SafetyAlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  CANCELLED
+}
+
+enum FavoritePlaceType {
+  HOME
+  WORK
+  SCHOOL
+  DATE_SPOT
+  CUSTOM
+}
+
+enum AuditAction {
+  REGISTER
+  LOGIN
+  LOGOUT
+  CHANGE_PASSWORD
+  UPDATE_PROFILE
+  CREATE_PAIRING_CODE
+  ACCEPT_PAIRING
+  DISSOLVE_COUPLE
+  ENABLE_LOCATION_SHARE
+  DISABLE_LOCATION_SHARE
+  DELETE_LOCATION_HISTORY
+  ACTIVATE_SOS
+  CANCEL_SOS
+  DELETE_ACCOUNT
+  TOKEN_REFRESH
+}
+
+// =============================================================================
+// MODELS
+// =============================================================================
+
+model User {
+  id              String    @id @db.Char(12)  // 12-digit random number, set in application layer
+  email           String    @unique
+  passwordHash    String?   @map("password_hash")
+  name            String?   @map("name")                       // Tên
+  displayName     String    @default("") @map("display_name")  // Tên hiển thị
+  age             Int?      @map("age")                        // Tuổi (>= 16)
+  birthDate       DateTime? @map("birth_date")                  // Ngày sinh (tuổi >= 16)
+  gender          Gender?                                        // Giới tính
+  isEmailVerified Boolean   @default(false) @map("is_email_verified")
+  isActive        Boolean   @default(true) @map("is_active")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  profile              UserProfile?
+  otps                 Otp[]
+  refreshTokens        RefreshToken[]
+  devices              Device[]
+  sessions             Session[]
+  coupleMember         CoupleMember?
+  sentMessages         Message[]              @relation("MessageSender")
+  messageReadStatuses  MessageReadStatus[]
+  notifications        Notification[]
+  favoritePlaces       FavoritePlace[]
+  locationSharing      LocationSharingSetting?
+  currentLocation      Location?
+  locationHistory      LocationHistory[]
+  stopEvents           StopEvent[]            @relation("StopEventUser")
+  receivedStopEvents   StopEvent[]            @relation("StopEventNotified")
+  safetyAlertsCreated  SafetyAlert[]          @relation("AlertCreator")
+  safetyAlertsReceived SafetyAlert[]          @relation("AlertRecipient")
+  auditEvents          AuditEvent[]
+  pairingCodesCreated  PairingCode[]
+
+  @@map("users")
+  @@index([email])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+
+model UserProfile {
+  id          String    @id @default(cuid())
+  userId      String    @unique @map("user_id")
+  displayName String    @map("display_name")
+  avatarUrl   String?   @map("avatar_url")
+  birthDate   DateTime? @map("birth_date")
+  gender      Gender?
+  bio         String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Otp {
+  id           String     @id @default(cuid())
+  userId       String     @map("user_id")
+  email        String
+  codeHash     String     @map("code_hash") // bcrypt hash of OTP
+  purpose      OtpPurpose
+  status       OtpStatus  @default(PENDING)
+  attempts     Int        @default(0)
+  maxAttempts  Int        @default(5) @map("max_attempts")
+  expiresAt    DateTime   @map("expires_at")
+  verifiedAt   DateTime?  @map("verified_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("otps")
+  @@index([userId, purpose, status])
+  @@index([email, purpose])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") // SHA-256 hash
+  deviceId  String?   @map("device_id")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model Device {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  fcmToken   String?  @map("fcm_token") @db.VarChar(512)
+  platform   String   // android, ios
+  deviceName String?  @map("device_name")
+  osVersion  String?  @map("os_version")
+  appVersion String?  @map("app_version")
+  isActive   Boolean  @default(true) @map("is_active")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("devices")
+  @@index([userId])
+  @@index([fcmToken])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  deviceId  String?  @map("device_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent") @db.Text
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+  @@index([userId, isActive])
+}
+
+// =============================================================================
+// COUPLE MODELS
+// =============================================================================
+
+model Couple {
+  id           String       @id @default(cuid())
+  status       CoupleStatus @default(ACTIVE)
+  pairedAt     DateTime     @default(now()) @map("paired_at")
+  dissolvedAt  DateTime?    @map("dissolved_at")
+  dissolvedBy  String?      @map("dissolved_by") @db.Char(12)  // User đã bấm hủy ghép đôi
+  user1Id      String?      @map("user1_id") @db.Char(12)      // User tạo mã ghép đôi
+  user2Id      String?      @map("user2_id") @db.Char(12)      // User kết nối mã ghép đôi
+  pairingCode  String?      @map("pairing_code") @db.Char(8)   // Mã 8 ký tự đã kết nối
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  members       CoupleMember[]
+  conversation  Conversation?
+  favoritePlaces FavoritePlace[] @relation("CoupleFavoritePlace")
+  stopEvents    StopEvent[]
+  safetyAlerts  SafetyAlert[]
+
+  @@map("couples")
+  @@index([status])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model CoupleMember {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id") // One user, one couple at a time
+  coupleId  String   @map("couple_id")
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@map("couple_members")
+  @@index([coupleId])
+}
+
+model PairingCode {
+  id           String              @id @default(cuid())
+  creatorId    String              @map("creator_id")
+  code         String              @unique @db.Char(8)
+  status       PairingCodeStatus   @default(ACTIVE)
+  expiresAt    DateTime            @map("expires_at")
+  usedAt       DateTime?           @map("used_at")
+  usedBy       String?             @map("used_by") @db.Char(12)     // User đã nhập và kích hoạt mã này
+  cancelledAt  DateTime?           @map("cancelled_at")
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  creator       User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  pairingRequest PairingRequest?
+
+  @@map("pairing_codes")
+  @@index([code, status])
+  @@index([creatorId])
+  @@index([expiresAt])
+}
+
+model PairingRequest {
+  id             String               @id @default(cuid())
+  pairingCodeId  String               @unique @map("pairing_code_id")
+  requesterId    String               @map("requester_id")
+  status         PairingRequestStatus @default(PENDING)
+  respondedAt    DateTime?            @map("responded_at")
+  expiresAt      DateTime             @map("expires_at")
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  pairingCode PairingCode @relation(fields: [pairingCodeId], references: [id], onDelete: Cascade)
+
+  @@map("pairing_requests")
+  @@index([requesterId])
+  @@index([status])
+}
+
+// =============================================================================
+// LOCATION MODELS
+// =============================================================================
+
+model LocationSharingSetting {
+  id               String                @id @default(cuid())
+  userId           String                @unique @map("user_id")
+  isSharing        Boolean               @default(false) @map("is_sharing")
+  status           LocationSharingStatus @default(OFFLINE)
+  shareMovement    Boolean               @default(true) @map("share_movement")
+  shareBattery     Boolean               @default(true) @map("share_battery")
+  shareSpeed       Boolean               @default(true) @map("share_speed")
+  stopDetection    Boolean               @default(true) @map("stop_detection")
+  stopMinutes      Int                   @default(10) @map("stop_minutes")
+  batteryAlerts    Boolean               @default(true) @map("battery_alerts")
+  batteryThreshold Int                   @default(20) @map("battery_threshold")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("location_sharing_settings")
+}
+
+model Location {
+  id             String         @id @default(cuid())
+  userId         String         @unique @map("user_id") // Current location only
+  latitude       Float
+  longitude      Float
+  accuracy       Float?         // meters
+  altitude       Float?         // meters
+  speed          Float?         // m/s
+  heading        Float?         // degrees 0-360
+  battery        Int?           // 0-100
+  movementStatus MovementStatus @default(STATIONARY) @map("movement_status")
+  isCharging     Boolean?       @map("is_charging")
+  address        String?        @db.Text // Reverse geocoded address
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("locations")
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model LocationHistory {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  latitude       Float
+  longitude      Float
+  accuracy       Float?
+  altitude       Float?
+  speed          Float?
+  heading        Float?
+  battery        Int?
+  movementStatus MovementStatus @default(STATIONARY) @map("movement_status")
+  recordedAt     DateTime       @default(now()) @map("recorded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("location_history")
+  @@index([userId, recordedAt])
+  @@index([recordedAt]) // for cleanup jobs
+}
+
+model StopEvent {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  coupleId     String    @map("couple_id")
+  notifiedId   String    @map("notified_id") // partner who was notified
+  latitude     Float
+  longitude    Float
+  address      String?   @db.Text
+  startedAt    DateTime  @map("started_at")
+  leftAt       DateTime? @map("left_at")
+  durationMins Int?      @map("duration_mins")
+  notified     Boolean   @default(false)
+  notifiedAt   DateTime? @map("notified_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user      User   @relation("StopEventUser", fields: [userId], references: [id], onDelete: Cascade)
+  notifiedUser User @relation("StopEventNotified", fields: [notifiedId], references: [id], onDelete: Cascade)
+  couple    Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@map("stop_events")
+  @@index([userId, coupleId])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// CHAT MODELS
+// =============================================================================
+
+model Conversation {
+  id        String   @id @default(cuid())
+  coupleId  String   @unique @map("couple_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  couple   Couple    @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String        @map("conversation_id")
+  senderId       String        @map("sender_id")
+  content        String        @db.Text
+  type           MessageType   @default(TEXT)
+  status         MessageStatus @default(SENT)
+  editedAt       DateTime?     @map("edited_at")
+  deletedAt      DateTime?     @map("deleted_at") // soft delete
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User              @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  readStatuses MessageReadStatus[]
+
+  @@map("messages")
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+model MessageReadStatus {
+  id         String   @id @default(cuid())
+  messageId  String   @map("message_id")
+  userId     String   @map("user_id")
+  readAt     DateTime @default(now()) @map("read_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@map("message_read_statuses")
+  @@index([userId])
+}
+
+// =============================================================================
+// NOTIFICATION MODELS
+// =============================================================================
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String              @map("user_id") // recipient
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  body      String              @db.Text
+  data      Json?               // Extra data (coupleId, messageId, etc.)
+  isRead    Boolean             @default(false) @map("is_read")
+  readAt    DateTime?           @map("read_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model NotificationSetting {
+  id               String  @id @default(cuid())
+  userId           String  @unique @map("user_id")
+  partnerLocation  Boolean @default(true) @map("partner_location")
+  partnerMessages  Boolean @default(true) @map("partner_messages")
+  partnerSOS       Boolean @default(true) @map("partner_sos")
+  stopDetection    Boolean @default(true) @map("stop_detection")
+  batteryAlerts    Boolean @default(true) @map("battery_alerts")
+  loveNotes        Boolean @default(true) @map("love_notes")
+
+  @@map("notification_settings")
+}
+
+// =============================================================================
+// PLACES & SAFETY MODELS
+// =============================================================================
+
+model FavoritePlace {
+  id        String            @id @default(cuid())
+  userId    String            @map("user_id")
+  coupleId  String?           @map("couple_id") // null = personal, set = shared with couple
+  name      String
+  type      FavoritePlaceType @default(CUSTOM)
+  icon      String?           // emoji or icon name
+  latitude  Float
+  longitude Float
+  address   String?           @db.Text
+  radius    Float             @default(100) // meters for geofencing
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couple Couple? @relation("CoupleFavoritePlace", fields: [coupleId], references: [id], onDelete: SetNull)
+
+  @@map("favorite_places")
+  @@index([userId])
+  @@index([coupleId])
+}
+
+model SafetyAlert {
+  id          String            @id @default(cuid())
+  coupleId    String            @map("couple_id")
+  creatorId   String            @map("creator_id")
+  recipientId String            @map("recipient_id")
+  status      SafetyAlertStatus @default(ACTIVE)
+  latitude    Float?
+  longitude   Float?
+  message     String?           @db.Text
+  activatedAt DateTime          @default(now()) @map("activated_at")
+  resolvedAt  DateTime?         @map("resolved_at")
+  cancelledAt DateTime?         @map("cancelled_at")
+  ackedAt     DateTime?         @map("acked_at") // acknowledged by recipient
+
+  couple    Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  creator   User   @relation("AlertCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  recipient User   @relation("AlertRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@map("safety_alerts")
+  @@index([coupleId, status])
+  @@index([creatorId])
+}
+
+// =============================================================================
+// AUDIT LOG
+// =============================================================================
+
+model AuditEvent {
+  id        String      @id @default(cuid())
+  userId    String      @map("user_id")
+  action    AuditAction
+  ipAddress String?     @map("ip_address")
+  userAgent String?     @map("user_agent") @db.Text
+  metadata  Json?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_events")
+  @@index([userId, action])
+  @@index([createdAt])
+}
