@@ -22,14 +22,16 @@ import {
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
+import { extname, join } from 'path';
+import { promises as fs } from 'fs';
 import { Request } from 'express';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { EventsGateway } from '../../gateways/events.gateway';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -42,6 +44,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly events: EventsGateway,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   @Get('profile')
@@ -73,13 +76,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Avatar uploaded and profile updated' })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/avatars',
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-          cb(null, `avatar-${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: MAX_SIZE_BYTES },
       fileFilter: (_req, file, cb) => {
         if (ALLOWED_MIME.includes(file.mimetype)) {
@@ -97,10 +94,26 @@ export class UsersController {
   ) {
     if (!file) throw new BadRequestException('Không tìm thấy file ảnh trong request');
 
-    // Build public URL: e.g. http://192.168.x.x:3000/uploads/avatars/avatar-xxx.jpg
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const avatarUrl = `${protocol}://${host}/uploads/avatars/${file.filename}`;
+    let avatarUrl: string;
+
+    if (this.cloudinaryService.isAvailable) {
+      try {
+        avatarUrl = await this.cloudinaryService.uploadImage(file, 'thinhuw/avatars');
+      } catch (err: any) {
+        throw new BadRequestException('Không thể tải ảnh lên Cloudinary: ' + (err?.message || 'Lỗi'));
+      }
+    } else {
+      // Fallback lưu local nếu chưa cấu hình Cloudinary
+      const uploadDir = join(process.cwd(), 'uploads', 'avatars');
+      await fs.mkdir(uploadDir, { recursive: true });
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+      const filename = `avatar-${uniqueSuffix}${extname(file.originalname || '.jpg')}`;
+      await fs.writeFile(join(uploadDir, filename), file.buffer);
+
+      const protocol = req.protocol;
+      const host = req.get('host');
+      avatarUrl = `${protocol}://${host}/uploads/avatars/${filename}`;
+    }
 
     const updated = await this.usersService.updateProfile(userId, { avatarUrl });
 
